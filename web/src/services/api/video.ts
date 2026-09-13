@@ -326,11 +326,14 @@ async function createVideoRequestBody(config: AiConfig, model: string, prompt: s
         if (!capabilities) throw new VideoRequestError("当前 AutoDL 工作流尚未适配");
         const { autoDLReferenceURL } = await import("./direct-ai");
         const [images, videos, audios, firstFrame, lastFrame] = await Promise.all([
-            Promise.all((capabilities.imageMax ? input.references : []).map(autoDLReferenceURL)),
+            // 图片 references 与首尾帧统一走 data URL，与其余视频渠道一致，
+            // 不再依赖上游能访问到画布地址。
+            Promise.all((capabilities.imageMax ? input.references : []).map(imageToDataUrl)),
+            // 视频 / 音频 references 仍走 URL（base64 后体积过大）。
             Promise.all((capabilities.videoMax ? input.videoReferences : []).map(autoDLReferenceURL)),
             Promise.all((capabilities.audioMax ? input.audioReferences : []).map(autoDLReferenceURL)),
-            capabilities.firstFrame && input.firstFrame ? autoDLReferenceURL(input.firstFrame) : Promise.resolve(""),
-            capabilities.lastFrame && input.lastFrame ? autoDLReferenceURL(input.lastFrame) : Promise.resolve(""),
+            capabilities.firstFrame && input.firstFrame ? imageToDataUrl(input.firstFrame) : Promise.resolve(""),
+            capabilities.lastFrame && input.lastFrame ? imageToDataUrl(input.lastFrame) : Promise.resolve(""),
         ]);
         return {
             model, prompt, seconds: config.videoSeconds, size: config.size, resolution_name: config.vquality,

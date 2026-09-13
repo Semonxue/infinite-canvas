@@ -49,10 +49,35 @@ function publicReferenceURL(value?: string) {
     if (!value || !/^https?:\/\//i.test(value)) return "";
     try {
         const url = new URL(value);
-        return ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname) ? "" : url.href;
+        return isLocalHostname(url.hostname) ? "" : url.href;
     } catch {
         return "";
     }
+}
+
+function isLocalHostname(hostname: string) {
+    // `URL.hostname` 对 IPv6 会保留方括号，例如 `[::1]`，先去掉。
+    const host = hostname.toLowerCase().replace(/^\[|\]$/g, "");
+    if (host === "localhost" || host === "::1") return true;
+    // mDNS / 私有网络：这些地址不会被外部上游解析，透传过去会让上游
+    // 在 DNS lookup 时失败，必须当作本地处理。
+    if (host.endsWith(".local")) return true;
+    return isPrivateIPv4(host) || isPrivateIPv6(host);
+}
+
+function isPrivateIPv4(host: string) {
+    const octets = host.split(".");
+    if (octets.length !== 4 || octets.some((octet) => !/^\d{1,3}$/.test(octet))) return false;
+    const [a, b] = octets.map(Number);
+    if (a === 10 || a === 127) return true;
+    if (a === 169 && b === 254) return true;
+    if (a === 172 && b >= 16 && b <= 31) return true;
+    return a === 192 && b === 168;
+}
+
+function isPrivateIPv6(host: string) {
+    if (!host.includes(":")) return false;
+    return host.startsWith("fc") || host.startsWith("fd") || host.startsWith("fe80");
 }
 
 export async function requestDirectImages(config: AiConfig, provider: DirectAIProvider, endpoint: "/images/generations" | "/images/edits", body: DirectRequestBody, timeoutSeconds: number): Promise<DirectImageResponse> {
